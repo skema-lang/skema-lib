@@ -25,12 +25,12 @@
 ##   - Nothing else. `CI_JOB_TOKEN` may publish to its own project's registry
 ##     out of the box, so there is no token to create or rotate here.
 ##
-## Known blocker, as of the first version of this file: `@skema/model` is not
-## in the registry yet. skema-language/skema has tagged v0.1.0…v0.1.3 but its
-## `publish-npm-model` job has never landed a package — the project's npm
-## package list is empty — so `npm ci` below cannot resolve `@skema/model@^0.1.2`
-## and this pipeline stays red until that job runs successfully once. The fix
-## belongs in that repo, not this one.
+## `@skema/model` reached the registry with skema's v0.1.4 tag; 0.1.0…0.1.3
+## were tagged but never published, so 0.1.4 is the oldest version that exists
+## and `^0.1.2` resolves to it. The lockfile was written while nothing was
+## published and therefore had no entry for the package at all, which is a
+## sync error for `npm ci`, not a resolution one — after a publish in the other
+## repo, `npm install` has to run here once and the lockfile be committed.
 
 workflow:
   rules:
