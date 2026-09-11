@@ -1,0 +1,21 @@
+{
+  "name": "skema-lib",
+  "private": true,
+  "description": "The TypeScript packages shared by skema's editors.",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/skema-language/skema-lib.git"
+  },
+  "workspaces": [
+    "diagram"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "dev": "npm run dev --workspace @skema/diagram"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
