@@ -143,4 +143,9 @@ publish:
       cat >> "$HOME/.npmrc" <<EOF
       //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
       EOF
-    - npm publish --workspaces
+    # The scope registry, not publishConfig, is what npm publishes a scoped
+    # package to (see .npmrc), and the repo's own .npmrc beats anything this
+    # job could write to $HOME — so the destination is repeated on the command
+    # line, where it finally outranks both. check-release.mjs has already
+    # established that every manifest names this same URL.
+    - npm publish --workspaces "--@skema:registry=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/npm/"

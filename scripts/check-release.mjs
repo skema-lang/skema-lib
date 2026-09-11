@@ -31,9 +31,10 @@ for (const [name, pkg] of Object.entries(packages)) {
   if (pkg.version !== version) {
     problems.push(`${name}: version is ${pkg.version}, tag ${tag} says ${version}`);
   }
-  // npm matches stored credentials against the registry URL by prefix, so a
-  // publishConfig aimed at a different project than the one running the job
-  // would upload unauthenticated and fail as a bare 401.
+  // npm ignores this field for a scoped package — `@skema:registry` wins, and
+  // the job passes this very URL on the command line instead. Checked anyway,
+  // so a manifest cannot quietly name a different project than the one the
+  // release actually uploads to.
   if (pkg["publishConfig.registry"] !== registry) {
     problems.push(
       `${name}: publishConfig.registry is ${pkg["publishConfig.registry"]}, this project is ${registry}`,
