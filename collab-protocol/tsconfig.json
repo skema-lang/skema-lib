@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Deliberately no "DOM": this package is the interop contract between a
+    // browser host and a Node (VSCode extension host) host - any accidental
+    // `window`/`btoa`/etc. reference here should fail typecheck, not compile
+    // quietly the way it would under the DOM-inclusive base config.
+    "lib": ["ES2022"]
+  },
+  "include": ["src"]
+}

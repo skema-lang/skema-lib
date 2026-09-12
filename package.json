@@ -8,7 +8,8 @@
     "url": "https://gitlab.com/skema-language/skema-lib.git"
   },
   "workspaces": [
-    "diagram"
+    "diagram",
+    "collab-protocol"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

@@ -5,3 +5,7 @@ dist
 
 # tsc -b build cache
 *.tsbuildinfo
+
+# npm pack output, for consuming an unreleased package locally (see each
+# app's README, "Using an unreleased skema-lib package")
+*.tgz

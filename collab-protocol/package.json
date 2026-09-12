@@ -1,0 +1,42 @@
+{
+  "name": "@skema/collab-protocol",
+  "version": "0.1.0",
+  "description": "The Yjs wire protocol and invite encoding shared by every skema collaboration host.",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/skema-language/skema-lib.git",
+    "directory": "collab-protocol"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://gitlab.com/api/v4/projects/86362004/packages/npm/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "lib0": "^0.2.117"
+  },
+  "peerDependencies": {
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.32"
+  },
+  "devDependencies": {
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.32"
+  }
+}
