@@ -1,6 +1,6 @@
 {
   "name": "@skema/diagram",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The skema diagram canvas, shared by the browser editor and the VSCode extension.",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -28,15 +28,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^3.1.1",
-    "@skema/model": "^0.1.2"
+    "@dagrejs/dagre": "^3.1.1"
   },
   "peerDependencies": {
+    "@skema/model": ">=0.1.4",
     "@xyflow/react": "^12.11.6",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@skema/model": "0.1.4",
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.8",
     "@xyflow/react": "^12.11.6",

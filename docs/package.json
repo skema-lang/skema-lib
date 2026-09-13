@@ -1,6 +1,6 @@
 {
   "name": "@skema/docs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The skema model as Markdown reference documentation, shared by the browser editor and the VSCode extension.",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -27,7 +27,10 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@skema/model": "^0.1.2"
+  "peerDependencies": {
+    "@skema/model": ">=0.1.4"
+  },
+  "devDependencies": {
+    "@skema/model": "0.1.4"
   }
 }
