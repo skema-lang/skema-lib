@@ -5,11 +5,18 @@ The TypeScript packages shared by skema's editors, as one npm workspace.
 | Package | What it is |
 |---|---|
 | [`@skema/diagram`](diagram) | The React Flow diagram canvas: nodes, groups, right-angle routing, the layout file |
+| [`@skema/collab-protocol`](collab-protocol) | The Yjs wire protocol and invite encoding both editors' collaboration features speak |
+| [`@skema/docs`](docs) | Renders the resolved model as Markdown, for both editors' documentation panes |
 
 Consumed by [skema-editor](https://gitlab.com/skema-language/skema-editor)
 (browser) and [skema-vscode](https://gitlab.com/skema-language/skema-vscode)
-(extension webview). Model types come from `@skema/model`, generated in the
-[language repo](https://gitlab.com/skema-language/skema).
+(extension webview). Model types come from `@skema/model`, and the WASM
+bindings from `@skema/wasm` - both produced by
+[`wasm-packaging/`](wasm-packaging) from a [language
+repo](https://gitlab.com/skema-language/skema) release, not a workspace
+package itself (see its own README:
+[brain/tasks/10](../brain/tasks/10-move-npm-packaging-out-of-skema-lang.md)
+moved this here so the language repo stays Rust-only).
 
 > Architecture, open tasks and decisions spanning all four `skema-language`
 > repos live in the shared [brain](../brain/README.md) — read it before
@@ -56,3 +63,7 @@ than design: a language release does not trigger a rebuild here, and
 `@skema/diagram`'s dependency on `@skema/model` is a caret rather than the
 exact version a release was built against. Which `@skema/model` a consumer
 ends up with therefore depends on registry state at install time.
+`wasm-packaging/` is the same gap in a second place: fetching a language
+release's artifact and publishing `@skema/model`/`@skema/wasm` from it is a
+runbook a person follows (its own README), not a CI job triggered by a
+language tag. Both are [tasks/07](../brain/tasks/07-close-the-release-chain.md).
