@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Publishes every given package directory whose name@version the registry does
-// not have yet, tagging the commit `<name>@<version>` first - a rerun after a
-// failed upload then skips the tag and retries only the upload. Prints each
-// newly published `name@version` on stdout; everything else goes to stderr.
+// not have yet. Prints each newly published `name@version` on stdout; everything
+// else goes to stderr.
 //
 //   node scripts/publish.mjs diagram docs collab-protocol
 import { execFileSync } from "node:child_process";
@@ -32,7 +31,6 @@ for (const dir of packageDirs) {
     console.error(`${spec} is already published`);
     continue;
   }
-  tag(spec);
   // The repo's .npmrc points the scope at the read-only group endpoint, and only
   // the command line outranks it.
   process.stderr.write(run("npm", "publish", resolve(dir), `--@skema:registry=${uploadRegistry}`));
@@ -46,14 +44,6 @@ async function isPublished(name, version) {
   if (!response.ok) throw new Error(`${name}: ${installRegistry} answered ${response.status}`);
   const { versions = {} } = await response.json();
   return Object.hasOwn(versions, version);
-}
-
-function tag(spec) {
-  const ref = `refs/tags/${spec}`;
-  if (run("git", "ls-remote", "origin", ref).trim()) return;
-  // A reused checkout can still hold the tag from an attempt whose push was refused.
-  run("git", "tag", "--force", "--annotate", spec, "--message", `chore(release): ${spec}`);
-  run("git", "push", "origin", ref);
 }
 
 function run(command, ...args) {

@@ -1,28 +1,46 @@
+spec:
+  inputs:
+    skema_lang_version:
+      type: string
+      default: ""
+      description: "skema-lang release version (e.g. v0.2.2) to build and publish @skema/model/@skema/wasm"
+      regex: '^(v[0-9]+\.[0-9]+\.[0-9]+)?$'
+    trigger_downstream:
+      type: boolean
+      default: true
+      description: "Whether to trigger skema-editor and skema-vscode to adopt this release"
+
+---
+
 ## skema-lib — GitLab CI/CD
 ##
 ## An npm workspace of publishable libraries, plus `wasm-packaging/`, which
-## turns a language release into @skema/model and @skema/wasm. Every package
-## carries its own version; nothing here is tagged by hand.
+## turns a language release into @skema/model and @skema/wasm. One version per
+## release (vX.Y.Z tag), derived from conventional commits.
 ##
 ## Release design: see CLAUDE.md, "Releasing — the chain".
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Package registry enabled (Settings → General → Visibility → Packages).
 ##   - Settings → CI/CD → Job token permissions → **Allow Git push requests to
-##     the repository**, so the publish jobs can push their tags.
+##     the repository**, so the release job can push tags.
 ##   - Settings → CI/CD → Job token permissions: allow `skema-language/skema`
 ##     to trigger this project.
 ##   - skema-editor and skema-vscode each allow `skema-language/skema-lib` in
 ##     their own job token allowlist, or the handoff gets a 404.
+##   - A `RELEASE_TRIGGER_TOKEN` CI variable, masked and protected: a pipeline
+##     trigger token (Settings → CI/CD → Pipeline trigger tokens).
 
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 stages:
   - build
   - check
+  - release
   - publish
   - verify
   - handoff
@@ -36,6 +54,9 @@ variables:
   # Inside the project directory so GitLab's cache can actually pick it up;
   # $HOME is not preserved between jobs.
   npm_config_cache: ${CI_PROJECT_DIR}/.npm
+  # Bridge from spec:inputs to scripts that read $SKEMA_LANG_VERSION
+  SKEMA_LANG_VERSION: $[[ inputs.skema_lang_version ]]
+  TRIGGER_DOWNSTREAM: $[[ inputs.trigger_downstream ]]
 
 # Keyed by the lockfile: the same dependency set reuses the cache, and a
 # changed lockfile starts a fresh one instead of layering onto a stale tree.
@@ -54,17 +75,31 @@ variables:
     //${CI_SERVER_HOST}/api/v4/groups/141817046/-/packages/npm/:_authToken=${CI_JOB_TOKEN}
     EOF
 
+# Install git-cliff for version computation.
+.install_git_cliff: &install_git_cliff
+  - apk add --no-cache git curl ca-certificates
+  - |
+    GIT_CLIFF_VERSION=2.10.1
+    GIT_CLIFF_ASSET="git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+    curl -fsSL -O "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${GIT_CLIFF_ASSET}"
+    curl -fsSL -O "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${GIT_CLIFF_ASSET}.sha512"
+    sha512sum -c "${GIT_CLIFF_ASSET}.sha512"
+    tar -xzf "${GIT_CLIFF_ASSET}" --strip-components=1 -C /usr/local/bin
+
 # A language release publishes generated packages only; `check-model` builds
 # the workspace in that pipeline instead.
 .workspace_rules: &workspace_rules
-  - if: $SKEMA_LANG_VERSION
+  - if: '"$[[ inputs.skema_lang_version ]]" != ""'
     when: never
   - when: on_success
 
-.release_rules: &release_rules
-  - if: $SKEMA_LANG_VERSION
+# Check jobs skip language-input and tag pipelines.
+.check_rules: &check_rules
+  - if: '"$[[ inputs.skema_lang_version ]]" != ""'
     when: never
-  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  - if: $CI_COMMIT_TAG
+    when: never
+  - when: on_success
 
 # --------------------------------------------------------------------------
 # build / check
@@ -91,13 +126,58 @@ audit:
   stage: check
   cache: *npm_cache
   needs: []
-  rules: *workspace_rules
+  rules: *check_rules
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
     - npm audit --audit-level=high
   # Advisory, not a gate.
   allow_failure: true
+
+# --------------------------------------------------------------------------
+# release
+# --------------------------------------------------------------------------
+
+release:
+  stage: release
+  image: node:22-bookworm-slim
+  needs: []
+  rules:
+    - if: '"$[[ inputs.skema_lang_version ]]" != ""'
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  resource_group: release
+  interruptible: false
+  variables:
+    GIT_DEPTH: 0
+    GIT_STRATEGY: clone
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates curl
+    - *install_git_cliff
+    - git config user.email "${GITLAB_USER_EMAIL:-ci@skema-language}"
+    - git config user.name "${GITLAB_USER_NAME:-skema release}"
+  script:
+    - bash scripts/release.sh
+
+release-test:
+  stage: check
+  image: alpine:latest
+  needs: []
+  rules: *check_rules
+  before_script:
+    - apk add --no-cache bash curl git
+    - *install_git_cliff
+  script:
+    - bash scripts/release-test.sh
+
+version-check:
+  stage: check
+  image: node:22-alpine
+  needs: []
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - node scripts/check-release.mjs "$CI_COMMIT_TAG"
 
 # --------------------------------------------------------------------------
 # publish
@@ -123,31 +203,52 @@ audit:
     expire_in: 1 week
 
 publish-packages:
-  <<: *release
+  stage: publish
+  interruptible: false
   needs:
     - job: build
       artifacts: true
-  rules: *release_rules
+    - version-check
+  rules:
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - apk add --no-cache git
+    - |
+      cat >> "$HOME/.npmrc" <<EOF
+      //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
+      EOF
   script:
-    - node scripts/publish.mjs $(node -p "require('./package.json').workspaces.join(' ')") > published.txt
-    # Only what was just published: a push that bumped nothing hands nothing down.
-    - node scripts/handoff.mjs $(cat published.txt) > handoff.yml
+    - node scripts/publish.mjs $(node -p "require('./package.json').workspaces.join(' ')")
+    - node scripts/handoff.mjs skema_lib_version "$CI_COMMIT_TAG" > handoff.yml
+  artifacts:
+    paths:
+      - handoff.yml
+    expire_in: 1 week
 
 publish-language-packages:
-  <<: *release
+  stage: publish
+  interruptible: false
   needs: []
   rules:
-    - if: $SKEMA_LANG_VERSION
+    - if: '"$[[ inputs.skema_lang_version ]]" != ""'
+  before_script:
+    - apk add --no-cache git
+    - |
+      cat >> "$HOME/.npmrc" <<EOF
+      //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
+      EOF
   script:
     - node wasm-packaging/scripts/fetch-artifact.mjs "$SKEMA_LANG_VERSION"
     - node wasm-packaging/scripts/build-model-package.mjs "$SKEMA_LANG_VERSION"
     - node wasm-packaging/scripts/build-wasm-package.mjs "$SKEMA_LANG_VERSION"
     # Model first: @skema/wasm pins it exactly.
     - node scripts/publish.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
-    # Handed down even when already published, so rerunning a language release
-    # retries the adoption.
-    - VERSION="${SKEMA_LANG_VERSION#v}"
-    - node scripts/handoff.mjs "@skema/model@$VERSION" "@skema/wasm@$VERSION" "skema-lsp@$VERSION" > handoff.yml
+    # Handed down even when already published, so rerunning a language release retries the adoption.
+    - node scripts/handoff.mjs skema_lang_version "$SKEMA_LANG_VERSION" > handoff.yml
+  artifacts:
+    paths:
+      - handoff.yml
+    expire_in: 1 week
 
 # --------------------------------------------------------------------------
 # verify (language releases)
@@ -161,14 +262,14 @@ check-model:
   needs:
     - publish-language-packages
   rules:
-    - if: $SKEMA_LANG_VERSION
+    - if: '"$[[ inputs.skema_lang_version ]]" != ""'
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
     # Set in the workspaces' own manifests: installed at the root instead, their
     # exact devDependency keeps the old model in reach of tsc.
     - npm pkg set "devDependencies.@skema/model=${SKEMA_LANG_VERSION#v}" --workspace diagram --workspace docs
-    - npm install --no-audit --fund=false
+    - npm install --prefer-online --no-audit --fund=false
     - npm run build
 
 # --------------------------------------------------------------------------
@@ -179,12 +280,13 @@ handoff-packages:
   stage: handoff
   needs:
     - publish-packages
-  rules: *release_rules
+  rules:
+    - if: '$CI_COMMIT_TAG && "$[[ inputs.trigger_downstream ]]" == "true"'
   trigger:
     include:
       - artifact: handoff.yml
         job: publish-packages
-    strategy: depend
+    strategy: mirror
 
 handoff-language:
   stage: handoff
@@ -192,9 +294,9 @@ handoff-language:
     - publish-language-packages
     - check-model
   rules:
-    - if: $SKEMA_LANG_VERSION
+    - if: '"$[[ inputs.skema_lang_version ]]" != "" && "$[[ inputs.trigger_downstream ]]" == "true"'
   trigger:
     include:
       - artifact: handoff.yml
         job: publish-language-packages
-    strategy: depend
+    strategy: mirror
