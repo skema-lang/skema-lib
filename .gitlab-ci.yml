@@ -4,18 +4,7 @@
 ## turns a language release into @skema/model and @skema/wasm. Every package
 ## carries its own version; nothing here is tagged by hand.
 ##
-## Two kinds of pipeline:
-## - MRs / default branch : build + audit. On the default branch, every
-##   workspace package whose `version` is not in the registry yet is published
-##   and tagged `<name>@<version>` — releasing one is bumping its version.
-## - SKEMA_LANG_VERSION=vX.Y.Z (set by the language repo's `trigger-lib`, or by
-##   hand under "Run pipeline"): publish @skema/model and @skema/wasm at that
-##   language version, then build every workspace package against that model.
-##
-## Both end in a handoff: a generated child pipeline that triggers skema-editor
-## and skema-vscode with SKEMA_VERSIONS, the exact versions to adopt.
-## `strategy: depend` throughout, so an app that fails to adopt turns this
-## pipeline red.
+## Release design: see CLAUDE.md, "Releasing — the chain".
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Package registry enabled (Settings → General → Visibility → Packages).
