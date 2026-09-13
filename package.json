@@ -9,7 +9,8 @@
   },
   "workspaces": [
     "diagram",
-    "collab-protocol"
+    "collab-protocol",
+    "docs"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

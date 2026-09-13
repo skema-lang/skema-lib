@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Deliberately no "DOM": this package is pure string generation from a
+    // model plus a note lookup - no window, no fetch, nothing host-specific.
+    // Both a browser and a VSCode extension host must be able to import it
+    // unmodified.
+    "lib": ["ES2022"]
+  },
+  "include": ["src"]
+}

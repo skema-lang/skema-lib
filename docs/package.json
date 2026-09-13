@@ -1,0 +1,33 @@
+{
+  "name": "@skema/docs",
+  "version": "0.1.0",
+  "description": "The skema model as Markdown reference documentation, shared by the browser editor and the VSCode extension.",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/skema-language/skema-lib.git",
+    "directory": "docs"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://gitlab.com/api/v4/projects/86362004/packages/npm/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@skema/model": "^0.1.2"
+  }
+}
