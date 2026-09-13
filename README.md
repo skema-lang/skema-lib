@@ -11,6 +11,10 @@ Consumed by [skema-editor](https://gitlab.com/skema-language/skema-editor)
 (extension webview). Model types come from `@skema/model`, generated in the
 [language repo](https://gitlab.com/skema-language/skema).
 
+> Architecture, open tasks and decisions spanning all four `skema-language`
+> repos live in the shared [brain](../brain/README.md) — read it before
+> starting non-trivial work here, and update it before you finish.
+
 ```bash
 npm install
 npm run build        # every package
@@ -18,9 +22,11 @@ npm run typecheck
 npm run dev          # rebuild @skema/diagram on change
 ```
 
-Until the packages are published, the two apps depend on this directory by
-path (`file:../skema-lib/diagram`). Those lines move to registry versions at
-release time.
+Both apps install `@skema/diagram` from the registry, not from this directory —
+a change here reaches them only once it is released and `npm update` has run
+there. To try an unreleased change, `npm pack` the package and install the
+tarball in the app (a `file:` directory dependency is symlinked, which breaks
+TypeScript's resolution of `@skema/model`).
 
 ## Release
 
@@ -45,8 +51,8 @@ resolves packages across every project in the group, and each package names its
 own project endpoint in `publishConfig.registry`. Consumers need that same
 `.npmrc` line to install from the registry.
 
-> **Currently blocked.** `@skema/diagram` depends on `@skema/model@^0.1.2`, and
-> that package is not in the registry yet — skema-language/skema has tagged
-> v0.1.0–v0.1.3 but its `publish-npm-model` job has never landed a package, so
-> `npm ci` fails here with a 404. Once that job runs once, `npm install` will
-> resolve it and the regenerated `package-lock.json` needs to be committed.
+Two things this repo does *not* do yet, both of them deliberate gaps rather
+than design: a language release does not trigger a rebuild here, and
+`@skema/diagram`'s dependency on `@skema/model` is a caret rather than the
+exact version a release was built against. Which `@skema/model` a consumer
+ends up with therefore depends on registry state at install time.

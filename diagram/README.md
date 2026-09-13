@@ -25,11 +25,13 @@ single-bend `step` routing.
 
 ## Development
 
-Both consumers point at this directory until it is published:
-
 ```bash
 cd skema-lib && npm install && npm run build
 npm run dev            # rebuild diagram/dist on change
 ```
+
+Both consumers install this package from the registry, so a change here reaches
+them through a release — see [skema-lib's README](../README.md) for trying one
+out before it is published.
 
 Model types come from `@skema/model`, generated in the language repo.

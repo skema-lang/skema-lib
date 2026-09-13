@@ -15,9 +15,9 @@
 ## package.json, commit, `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 ##
 ## Unlike skema, nothing here tags itself and nothing downstream is triggered.
-## skema-editor and skema-vscode still consume this repo by path
-## (`file:../skema-lib/diagram`); when they move to registry versions they need
-## the same `@skema` scope line this repo's .npmrc carries.
+## skema-editor and skema-vscode consume the published packages, each with a
+## copy of the `@skema` scope line this repo's .npmrc carries — so a change here
+## reaches them only once it is tagged and published.
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Package registry enabled (Settings → General → Visibility → Packages).
