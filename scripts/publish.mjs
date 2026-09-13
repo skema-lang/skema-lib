@@ -51,7 +51,8 @@ async function isPublished(name, version) {
 function tag(spec) {
   const ref = `refs/tags/${spec}`;
   if (run("git", "ls-remote", "origin", ref).trim()) return;
-  run("git", "tag", "--annotate", spec, "--message", `chore(release): ${spec}`);
+  // A reused checkout can still hold the tag from an attempt whose push was refused.
+  run("git", "tag", "--force", "--annotate", spec, "--message", `chore(release): ${spec}`);
   run("git", "push", "origin", ref);
 }
 
