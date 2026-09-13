@@ -27,19 +27,16 @@ nature, so it lives here instead.
 
 ## Releasing a new version
 
-Same bar every other package in this repo meets today - see the root
-[README](../README.md#release), "released by hand", no CI trigger yet
-([brain/tasks/07](../../brain/tasks/07-close-the-release-chain.md) is the
-open task for automating this handoff):
+CI does it: a language tag triggers skema-lib with `SKEMA_LANG_VERSION`
+(`publish-language-packages` in [.gitlab-ci.yml](../.gitlab-ci.yml)). To
+release a language version again, run the skema-lib pipeline on `main` with
+that variable set. The job runs, from the repo root:
 
 ```bash
-cd wasm-packaging
-node scripts/fetch-artifact.mjs v0.3.2          # → ./pkg
-node scripts/build-model-package.mjs 0.3.2      # → npm/model
-node scripts/build-wasm-package.mjs 0.3.2       # → npm/wasm (depends on npm/model)
-
-cd npm/model && npm publish && cd ../..
-cd npm/wasm && npm publish && cd ../..
+node wasm-packaging/scripts/fetch-artifact.mjs v0.3.2       # → pkg
+node wasm-packaging/scripts/build-model-package.mjs 0.3.2   # → npm/model
+node wasm-packaging/scripts/build-wasm-package.mjs 0.3.2    # → npm/wasm (pins npm/model)
+node scripts/publish.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
 ```
 
 The version given to `build-*-package.mjs` must be the exact `skema-lang` tag
@@ -50,9 +47,7 @@ same version exactly, not a range.
 `fetch-artifact.mjs` needs network access to `gitlab.com` (or
 `SKEMA_REGISTRY`/`SKEMA_PROJECT` for a self-hosted mirror or fork); a private
 `skema-lang` project needs `GITLAB_TOKEN` (a `read_api` token) or
-`CI_JOB_TOKEN` set. `npm publish` needs credentials for this project's own
-registry - `publishConfig.registry` in each generated manifest already names
-it, so a plain `.npmrc` with an auth token for `gitlab.com` is enough.
+`CI_JOB_TOKEN` set.
 
 ## Local testing without a published tag
 

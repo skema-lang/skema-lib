@@ -1,47 +1,42 @@
 ## skema-lib — GitLab CI/CD
 ##
-## This repo is a plain npm workspace of publishable libraries, so the pipeline
-## is correspondingly small: build (which type-checks), audit, and — on a tag —
-## push every workspace package to this project's npm Package Registry.
+## An npm workspace of publishable libraries, plus `wasm-packaging/`, which
+## turns a language release into @skema/model and @skema/wasm. Every package
+## carries its own version; nothing here is tagged by hand.
 ##
-## Pipeline sources: merge requests, the default branch, and tags.
-## - MRs / default branch : build + audit
-## - tags (vX.Y.Z)        : additionally publish the packages
+## Two kinds of pipeline:
+## - MRs / default branch : build + audit. On the default branch, every
+##   workspace package whose `version` is not in the registry yet is published
+##   and tagged `<name>@<version>` — releasing one is bumping its version.
+## - SKEMA_LANG_VERSION=vX.Y.Z (set by the language repo's `trigger-lib`, or by
+##   hand under "Run pipeline"): publish @skema/model and @skema/wasm at that
+##   language version, then build every workspace package against that model.
 ##
-## The tag is the single source of truth for the version. `check-release`
-## refuses to publish unless every workspace manifest already carries the
-## version the tag names, the same bargain skema's `publish-npm-model` makes
-## with Cargo.toml. Cutting a release is therefore: bump the version in each
-## package.json, commit, `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-##
-## Unlike skema, nothing here tags itself and nothing downstream is triggered.
-## skema-editor and skema-vscode consume the published packages, each with a
-## copy of the `@skema` scope line this repo's .npmrc carries — so a change here
-## reaches them only once it is tagged and published.
+## Both end in a handoff: a generated child pipeline that triggers skema-editor
+## and skema-vscode with SKEMA_VERSIONS, the exact versions to adopt.
+## `strategy: depend` throughout, so an app that fails to adopt turns this
+## pipeline red.
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Package registry enabled (Settings → General → Visibility → Packages).
-##     It is on by default; the publish job 403s without it.
-##   - Nothing else. `CI_JOB_TOKEN` may publish to its own project's registry
-##     out of the box, so there is no token to create or rotate here.
-##
-## `@skema/model` reached the registry with skema's v0.1.4 tag; 0.1.0…0.1.3
-## were tagged but never published, so 0.1.4 is the oldest version that exists
-## and `^0.1.2` resolves to it. The lockfile was written while nothing was
-## published and therefore had no entry for the package at all, which is a
-## sync error for `npm ci`, not a resolution one — after a publish in the other
-## repo, `npm install` has to run here once and the lockfile be committed.
+##   - Settings → CI/CD → Job token permissions → **Allow Git push requests to
+##     the repository**, so the publish jobs can push their tags.
+##   - Settings → CI/CD → Job token permissions: allow `skema-language/skema`
+##     to trigger this project.
+##   - skema-editor and skema-vscode each allow `skema-language/skema-lib` in
+##     their own job token allowlist, or the handoff gets a 404.
 
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 stages:
   - build
   - check
   - publish
+  - verify
+  - handoff
 
 default:
   image: node:22-alpine
@@ -63,89 +58,154 @@ variables:
     - .npm
   policy: pull-push
 
-# The `@skema` scope resolves from the group endpoint (see .npmrc). Both
-# projects are public, so this is anonymous today and the token is pure
-# insurance against one of them going private later — at which point the
-# *other* project also has to allow this one under Settings → CI/CD → Job
-# token permissions, or the install 404s.
+# Insurance for the day a project in the group goes private; anonymous today.
 .npm_auth: &npm_auth
   - |
     cat >> "$HOME/.npmrc" <<EOF
     //${CI_SERVER_HOST}/api/v4/groups/141817046/-/packages/npm/:_authToken=${CI_JOB_TOKEN}
     EOF
 
+# A language release publishes generated packages only; `check-model` builds
+# the workspace in that pipeline instead.
+.workspace_rules: &workspace_rules
+  - if: $SKEMA_LANG_VERSION
+    when: never
+  - when: on_success
+
+.release_rules: &release_rules
+  - if: $SKEMA_LANG_VERSION
+    when: never
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 # --------------------------------------------------------------------------
-# build
+# build / check
 # --------------------------------------------------------------------------
 
 # There is no separate typecheck job on purpose: each package's build is
 # `tsc -p tsconfig.build.json`, which extends the very tsconfig.json that
-# `npm run typecheck` uses and covers the same `src`. Running both would buy
-# a second copy of the same errors.
+# `npm run typecheck` uses and covers the same `src`.
 build:
   stage: build
   cache: *npm_cache
+  rules: *workspace_rules
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
     - npm run build
   artifacts:
     paths:
-      # One per workspace; `files` in each package.json ships exactly this, so
-      # the publish job needs nothing else from here.
+      # One per workspace; `files` in each package.json ships exactly this.
       - "*/dist"
     expire_in: 1 week
-
-# --------------------------------------------------------------------------
-# check
-# --------------------------------------------------------------------------
 
 audit:
   stage: check
   cache: *npm_cache
   needs: []
+  rules: *workspace_rules
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
     - npm audit --audit-level=high
-  # Advisory, not a gate: a transitive advisory with no fixed version available
-  # should show up in the pipeline without blocking a release of libraries that
-  # ship type declarations and a render layer.
+  # Advisory, not a gate.
   allow_failure: true
 
 # --------------------------------------------------------------------------
-# publish (tags only)
+# publish
 # --------------------------------------------------------------------------
 
-# Pushes every workspace package to this project's npm registry.
-#
-# No `npm ci` here: none of the packages define a prepare/prepack script, so
-# publishing reads the manifests and the `dist/` artifacts from `build` and
-# never needs an installed tree. That also keeps the one irreversible job in
-# the pipeline independent of whether a registry happens to be reachable.
-publish:
+# Uploading and tagging cannot be taken back, so a newer pipeline must not
+# cancel it halfway.
+.release: &release
   stage: publish
-  needs:
-    - job: build
-      artifacts: true
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    # Before anything is uploaded: the tag must match every manifest's version,
-    # and every publishConfig must name this project. npm has no un-publish
-    # worth the name, so a wrong version is not a failed job — it is a bad
-    # release that consumers can already install.
-    - node scripts/check-release.mjs "$CI_COMMIT_TAG"
-    # Written to $HOME rather than appended to the repo's .npmrc so the token
-    # never lands in a tracked file. npm matches it to
-    # `publishConfig.registry` by URL prefix.
+  interruptible: false
+  before_script:
+    - apk add --no-cache git
     - |
       cat >> "$HOME/.npmrc" <<EOF
       //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
       EOF
-    # The scope registry, not publishConfig, is what npm publishes a scoped
-    # package to (see .npmrc), and the repo's own .npmrc beats anything this
-    # job could write to $HOME — so the destination is repeated on the command
-    # line, where it finally outranks both. check-release.mjs has already
-    # established that every manifest names this same URL.
-    - npm publish --workspaces "--@skema:registry=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/npm/"
+    - git config user.email "${GITLAB_USER_EMAIL:-ci@skema-language}"
+    - git config user.name "${GITLAB_USER_NAME:-skema release}"
+    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+  artifacts:
+    paths:
+      - handoff.yml
+    expire_in: 1 week
+
+publish-packages:
+  <<: *release
+  needs:
+    - job: build
+      artifacts: true
+  rules: *release_rules
+  script:
+    - node scripts/publish.mjs $(node -p "require('./package.json').workspaces.join(' ')") > published.txt
+    # Only what was just published: a push that bumped nothing hands nothing down.
+    - node scripts/handoff.mjs $(cat published.txt) > handoff.yml
+
+publish-language-packages:
+  <<: *release
+  needs: []
+  rules:
+    - if: $SKEMA_LANG_VERSION
+  script:
+    - node wasm-packaging/scripts/fetch-artifact.mjs "$SKEMA_LANG_VERSION"
+    - node wasm-packaging/scripts/build-model-package.mjs "$SKEMA_LANG_VERSION"
+    - node wasm-packaging/scripts/build-wasm-package.mjs "$SKEMA_LANG_VERSION"
+    # Model first: @skema/wasm pins it exactly.
+    - node scripts/publish.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
+    # Handed down even when already published, so rerunning a language release
+    # retries the adoption.
+    - VERSION="${SKEMA_LANG_VERSION#v}"
+    - node scripts/handoff.mjs "@skema/model@$VERSION" "@skema/wasm@$VERSION" "skema-lsp@$VERSION" > handoff.yml
+
+# --------------------------------------------------------------------------
+# verify (language releases)
+# --------------------------------------------------------------------------
+
+# @skema/diagram and @skema/docs take @skema/model as a peer without an upper
+# bound, so a new language version is where an incompatible model shows up.
+check-model:
+  stage: verify
+  cache: *npm_cache
+  needs:
+    - publish-language-packages
+  rules:
+    - if: $SKEMA_LANG_VERSION
+  before_script: *npm_auth
+  script:
+    - npm ci --prefer-offline --no-audit --fund=false
+    # Set in the workspaces' own manifests: installed at the root instead, their
+    # exact devDependency keeps the old model in reach of tsc.
+    - npm pkg set "devDependencies.@skema/model=${SKEMA_LANG_VERSION#v}" --workspace diagram --workspace docs
+    - npm install --no-audit --fund=false
+    - npm run build
+
+# --------------------------------------------------------------------------
+# handoff
+# --------------------------------------------------------------------------
+
+handoff-packages:
+  stage: handoff
+  needs:
+    - publish-packages
+  rules: *release_rules
+  trigger:
+    include:
+      - artifact: handoff.yml
+        job: publish-packages
+    strategy: depend
+
+handoff-language:
+  stage: handoff
+  needs:
+    - publish-language-packages
+    - check-model
+  rules:
+    - if: $SKEMA_LANG_VERSION
+  trigger:
+    include:
+      - artifact: handoff.yml
+        job: publish-language-packages
+    strategy: depend

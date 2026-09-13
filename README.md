@@ -29,41 +29,37 @@ npm run typecheck
 npm run dev          # rebuild @skema/diagram on change
 ```
 
-Both apps install `@skema/diagram` from the registry, not from this directory —
-a change here reaches them only once it is released and `npm update` has run
-there. To try an unreleased change, `npm pack` the package and install the
+Both apps install these packages from the registry, not from this directory —
+a change here reaches them once its version is published and handed down (see
+Release). To try an unreleased change, `npm pack` the package and install the
 tarball in the app (a `file:` directory dependency is symlinked, which breaks
 TypeScript's resolution of `@skema/model`).
 
 ## Release
 
-CI publishes every workspace package to this project's
+Every package carries its own version. A push to `main` publishes each
+workspace package whose `version` is not in this project's
 [GitLab Package Registry](https://gitlab.com/skema-language/skema-lib/-/packages)
-when a `vX.Y.Z` tag is pushed. The tag is the version:
+yet, and tags the commit `<name>@<version>`. Releasing one is:
 
 ```bash
-# bump "version" in each package's package.json to X.Y.Z first
-git commit -am "chore(release): vX.Y.Z"
-git tag vX.Y.Z
-git push origin main vX.Y.Z
+# bump "version" in that package's package.json
+git commit -am "chore(release): @skema/diagram@X.Y.Z"
+git push origin main
 ```
 
-`scripts/check-release.mjs` refuses to publish if a manifest disagrees with the
-tag, so a mistyped bump fails the job instead of shipping a version that cannot
-be traced back to a commit.
+`@skema/model` and `@skema/wasm` are not workspace packages: a language release
+triggers this repo with `SKEMA_LANG_VERSION`, and CI publishes both at the
+language's version ([wasm-packaging/](wasm-packaging)). Either way the pipeline
+ends by handing the exact versions it released to skema-editor and
+skema-vscode, which pin them and release under their own versions.
+
+`@skema/diagram` and `@skema/docs` take `@skema/model` as a peer dependency, so
+the app decides which model it runs; a language release checks that every
+package here still builds against the new one (`check-model`).
 
 Both the `@skema` scope and the publish target are configured in the repo:
 `.npmrc` points the scope at the skema-language **group** endpoint, which
 resolves packages across every project in the group, and each package names its
 own project endpoint in `publishConfig.registry`. Consumers need that same
 `.npmrc` line to install from the registry.
-
-Two things this repo does *not* do yet, both of them deliberate gaps rather
-than design: a language release does not trigger a rebuild here, and
-`@skema/diagram`'s dependency on `@skema/model` is a caret rather than the
-exact version a release was built against. Which `@skema/model` a consumer
-ends up with therefore depends on registry state at install time.
-`wasm-packaging/` is the same gap in a second place: fetching a language
-release's artifact and publishing `@skema/model`/`@skema/wasm` from it is a
-runbook a person follows (its own README), not a CI job triggered by a
-language tag. Both are [tasks/07](../brain/tasks/07-close-the-release-chain.md).
