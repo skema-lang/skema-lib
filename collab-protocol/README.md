@@ -2,8 +2,8 @@
 
 The interoperability contract between every host that can join a skema
 collaboration session: [skema-editor](https://gitlab.com/skema-language/skema-editor)
-(browser) today, [skema-vscode](https://gitlab.com/skema-language/skema-vscode)
-(extension) once it grows collaboration of its own.
+(browser) and [skema-vscode](https://gitlab.com/skema-language/skema-vscode)
+(extension).
 
 ## What is in here, and what is not
 
@@ -15,6 +15,14 @@ sync at all:
   regardless of how the two hosts found each other.
 - `invite.ts` — the `Invite` data shapes and their encode/decode functions
   (base64url over a deflated, JSON-serialized invite).
+- `projectMap.ts` — the shared project's `Y.Doc` shape: which key holds the
+  `Y.Text` per file, which key names the root. `skema-editor`'s
+  `collab/projectBinding.ts` and `skema-vscode`'s `collab/projectSync.ts`
+  both key a session's shared files this way
+  ([brain/tasks/21](../../brain/tasks/21-extract-shared-project-map-shape.md)) -
+  everything that reads or writes the map's *content* (the diff algorithm,
+  the store wiring, seeding/adopting a project) stays in each host, only the
+  map's shape moved here.
 
 Session orchestration, the transport implementation (WebRTC, a broker), and
 UI stay in each host's own repo — the two runtimes (browser DOM + React vs.
