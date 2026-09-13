@@ -53,10 +53,12 @@ writeFileSync(
 
 // The checked-in manifest is a template without a version: it is stamped here
 // so that the number can only ever come from the release being packaged.
+// `...rest` first: a stray "version" surviving in the template must not win
+// the object-spread override.
 const { name, ...rest } = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
 writeFileSync(
   join(packageDir, "package.json"),
-  `${JSON.stringify({ name, version, ...rest }, null, 2)}\n`,
+  `${JSON.stringify({ ...rest, name, version }, null, 2)}\n`,
 );
 
 console.log(`Wrote npm/model at ${version} (${modelTypes.length} types)`);
