@@ -75,9 +75,11 @@ variables:
     //${CI_SERVER_HOST}/api/v4/groups/141817046/-/packages/npm/:_authToken=${CI_JOB_TOKEN}
     EOF
 
-# Install git-cliff for version computation.
+# Install git-cliff for version computation. Callers must install `curl`,
+# `tar` and `ca-certificates` themselves first, with whatever package
+# manager matches their own image — this anchor runs on both Alpine
+# (`release-test`) and Debian (`release`) images and must not assume either.
 .install_git_cliff: &install_git_cliff
-  - apk add --no-cache git curl ca-certificates
   - |
     GIT_CLIFF_VERSION=2.10.1
     GIT_CLIFF_ASSET="git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
@@ -165,7 +167,7 @@ release-test:
   needs: []
   rules: *check_rules
   before_script:
-    - apk add --no-cache bash curl git
+    - apk add --no-cache bash curl git ca-certificates
     - *install_git_cliff
   script:
     - bash scripts/release-test.sh
