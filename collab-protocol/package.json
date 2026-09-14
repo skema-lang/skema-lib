@@ -1,6 +1,6 @@
 {
   "name": "@skema/collab-protocol",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "The Yjs wire protocol and invite encoding shared by every skema collaboration host.",
   "license": "MIT OR Apache-2.0",
   "repository": {

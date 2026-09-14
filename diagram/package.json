@@ -1,6 +1,6 @@
 {
   "name": "@skema/diagram",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "The skema diagram canvas, shared by the browser editor and the VSCode extension.",
   "license": "MIT OR Apache-2.0",
   "repository": {
