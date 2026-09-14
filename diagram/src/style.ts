@@ -231,19 +231,32 @@ export function readStyleClasses(entries: MetaEntry[] | undefined): string[] {
  * `docs/03`: `Project` selector, then this file's `Document` selector, then
  * the assigned classes in list order. A class declared in the file itself
  * shadows a project-wide one of the same name.
+ *
+ * `boxInheritance` is the one extra layer a box selector (`table`/`enum`/
+ * `group`) takes: this file's `@document.backgroundColor`, ranked weaker
+ * than this file's own selector but stronger than the project-wide default
+ * (decisions.md, "Style rendering scope").
  */
 function cascade(
   styles: ProjectStyles,
   selector: string,
   file: string,
   classNames: string[],
+  boxInheritance?: Declarations,
 ): Array<Declarations | undefined> {
   const documentClasses = styles.documentClasses[file] ?? {};
   return [
     styles.projectSelectors[selector],
+    boxInheritance,
     styles.documentSelectors[file]?.[selector],
     ...classNames.map((name) => documentClasses[name] ?? styles.projectClasses[name]),
   ];
+}
+
+/** The one property a document lends the boxes it contains - see `cascade`. */
+function documentBackground(styles: ProjectStyles, file: string): Declarations | undefined {
+  const backgroundColor = resolveDocumentStyle(styles, file).backgroundColor;
+  return backgroundColor !== undefined ? { backgroundColor } : undefined;
 }
 
 function apply(
@@ -266,7 +279,8 @@ export function resolveTableStyle(
   file: string,
   classNames: string[],
 ): ResolvedStyle {
-  return apply(cascade(styles, "table", file, classNames), BOX_PROPERTIES);
+  const cascaded = cascade(styles, "table", file, classNames, documentBackground(styles, file));
+  return apply(cascaded, BOX_PROPERTIES);
 }
 
 export function resolveEnumStyle(
@@ -274,7 +288,8 @@ export function resolveEnumStyle(
   file: string,
   classNames: string[],
 ): ResolvedStyle {
-  return apply(cascade(styles, "enum", file, classNames), BOX_PROPERTIES);
+  const cascaded = cascade(styles, "enum", file, classNames, documentBackground(styles, file));
+  return apply(cascaded, BOX_PROPERTIES);
 }
 
 export function resolveGroupStyle(
@@ -282,7 +297,8 @@ export function resolveGroupStyle(
   file: string,
   classNames: string[],
 ): ResolvedStyle {
-  return apply(cascade(styles, "group", file, classNames), GROUP_PROPERTIES);
+  const cascaded = cascade(styles, "group", file, classNames, documentBackground(styles, file));
+  return apply(cascaded, GROUP_PROPERTIES);
 }
 
 /** Relationships carry no `Meta`, so there are no classes to assign. */
@@ -322,6 +338,24 @@ const GROUP_VARIABLES: Record<string, string> = {
   borderStyle: "--group-border-style",
 };
 
+const EDGE_VARIABLES: Record<string, string> = {
+  lineColor: "--edge-line-color",
+  lineWidth: "--edge-line-width",
+};
+
+const PROJECT_VARIABLES: Record<string, string> = {
+  backgroundColor: "--project-bg",
+  fontSize: "--project-font-size",
+};
+
+/** `stroke-dasharray` wants a list of numbers, not the keyword `lineStyle`
+ *  resolves to, so the keyword is translated once, here. */
+const LINE_STYLE_DASHARRAY: Record<string, string> = {
+  solid: "none",
+  dashed: "6 3",
+  dotted: "2 2",
+};
+
 function cssVariables(
   style: ResolvedStyle,
   variables: Record<string, string>,
@@ -340,4 +374,17 @@ export function nodeStyleVariables(style: ResolvedStyle): Record<string, string>
 
 export function groupStyleVariables(style: ResolvedStyle): Record<string, string> {
   return cssVariables(style, GROUP_VARIABLES);
+}
+
+export function edgeStyleVariables(style: ResolvedStyle): Record<string, string> {
+  const declared = cssVariables(style, EDGE_VARIABLES);
+  const dasharray = style.lineStyle ? LINE_STYLE_DASHARRAY[style.lineStyle] : undefined;
+  if (dasharray !== undefined) declared["--edge-line-dasharray"] = dasharray;
+  return declared;
+}
+
+/** The diagram frame is project-wide, so this is the one place these
+ *  variables are set - on the `<ReactFlow>` wrapper, not per node. */
+export function projectStyleVariables(style: ResolvedStyle): Record<string, string> {
+  return cssVariables(style, PROJECT_VARIABLES);
 }

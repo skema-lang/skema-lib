@@ -70,10 +70,15 @@ import {
 import { layoutGraph } from "./layout";
 import { emptyLayout, type Position } from "./layoutFile";
 import {
+  edgeStyleVariables,
+  projectStyleVariables,
   resolveEnumStyle,
   resolveGroupStyle,
+  resolveProjectStyle,
+  resolveRelationStyle,
   resolveTableStyle,
   readStyleClasses,
+  type ResolvedStyle,
 } from "./style";
 import { NODE_WIDTH, TableNode, nodeHeight } from "./TableNode";
 import { WaypointEdge } from "./WaypointEdge";
@@ -207,6 +212,9 @@ function DiagramCanvas({
     const { model: exported, metas, enumMetas, groupMetas, projectStyles, layout } = source;
 
     const relations = relationEdges(exported);
+    const relationStyles = new Map<string, ResolvedStyle>(
+      relations.map((relation) => [relation.id, resolveRelationStyle(projectStyles, relation.file)]),
+    );
     const data = new Map<string, NodeEntry>();
     for (const table of exported.tables) {
       const meta = metas[table.file]?.find((m) => m.name === table.name);
@@ -338,8 +346,15 @@ function DiagramCanvas({
     }
 
     const positions = new Map(specs.map((spec) => [spec.id, spec.position]));
-    return { specs, positions, frames, relations };
+    return { specs, positions, frames, relations, relationStyles };
   }, [source]);
+
+  // Project-wide: the same for every node, so it is resolved once and
+  // applied to the canvas itself rather than per element.
+  const projectStyle = useMemo(
+    () => (source ? projectStyleVariables(resolveProjectStyle(source.projectStyles)) : {}),
+    [source],
+  );
 
   // Reconcile the model into the live nodes: content and stored positions
   // come from the model, while selection, measured size and an in-flight
@@ -448,6 +463,7 @@ function DiagramCanvas({
         type: rightAngle ? "waypoint" : edgeRouting,
         label: relation.label,
         className: relation.oneToOne ? "edge-one-to-one" : "edge-one-to-many",
+        style: edgeStyleVariables(model.relationStyles.get(relation.id) ?? {}) as CSSProperties,
         data: {
           location: relation.location,
           ...(rightAngle
@@ -609,6 +625,7 @@ function DiagramCanvas({
     <ReactFlow
       nodes={nodes}
       edges={edges}
+      style={projectStyle as CSSProperties}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
