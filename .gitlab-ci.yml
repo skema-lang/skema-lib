@@ -3,43 +3,69 @@ spec:
     skema_lang_version:
       type: string
       default: ""
-      description: "skema-lang release version (e.g. v0.2.2) to build and publish @skema/model/@skema/wasm"
-      regex: '^(v[0-9]+\.[0-9]+\.[0-9]+)?$'
+      description: "skema-lang release to build and publish @skema/model/@skema/wasm from"
+      regex: '^(v\d+\.\d+\.\d+(-rc\.\d+)?)?$'
     trigger_downstream:
       type: boolean
       default: true
-      description: "Whether to trigger skema-editor and skema-vscode to adopt this release"
+      description: "Whether to hand released/published versions down to skema-editor and skema-vscode"
+    republish_version:
+      type: string
+      default: ""
+      regex: '^(v\d+\.\d+\.\d+(-rc\.\d+)?)?$'
+      description: "Existing own-release vX.Y.Z(-rc.N) to re-run the publish steps for"
 
 ---
 
 ## skema-lib — GitLab CI/CD
 ##
-## An npm workspace of publishable libraries, plus `wasm-packaging/`, which
-## turns a language release into @skema/model and @skema/wasm. One version per
-## release (vX.Y.Z tag), derived from conventional commits.
+## Two independent paths share this pipeline:
+## - own release: @skema/diagram, @skema/docs, @skema/collab-protocol, one
+##   version, through the skema-ci component below;
+## - language pipeline (skema_lang_version input): publishes @skema/model and
+##   @skema/wasm at skema-lang's version and hands it down. It never commits
+##   or releases a skema-lib version of its own.
 ##
-## Release design: see CLAUDE.md, "Releasing — the chain".
+## Release design: see CLAUDE.md, "Releasing — the chain", and
+## brain/release-chain.md.
 ##
 ## Prerequisites in the GitLab project settings:
-##   - Package registry enabled (Settings → General → Visibility → Packages).
-##   - Settings → CI/CD → Job token permissions → **Allow Git push requests to
-##     the repository**, so the release job can push tags.
-##   - Settings → CI/CD → Job token permissions: allow `skema-language/skema`
-##     to trigger this project.
-##   - skema-editor and skema-vscode each allow `skema-language/skema-lib` in
-##     their own job token allowlist, or the handoff gets a 404.
-##   - A `RELEASE_TRIGGER_TOKEN` CI variable, masked and protected: a pipeline
-##     trigger token (Settings → CI/CD → Pipeline trigger tokens).
+##   - Package registry enabled.
+##   - Settings → CI/CD → Job token permissions → Allow Git push requests to
+##     the repository (the release job pushes the version bump, tag and
+##     GitLab Release).
+##   - Job token allowlist: allow skema-language/skema to trigger this
+##     project; skema-editor and skema-vscode must each allow
+##     skema-language/skema-lib in their own allowlist.
+
+include:
+  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.0
+    inputs:
+      version_file_kind: npm-workspaces
+      version_file_paths: "diagram/package.json docs/package.json collab-protocol/package.json package-lock.json"
+      version_file_workspaces: "diagram docs collab-protocol"
+      publish_hook: >-
+        echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> "$HOME/.npmrc" &&
+        publish-npm.mjs diagram docs collab-protocol
+      dependants: "skema-language/skema-editor,skema-language/skema-vscode"
+      handoff_input_name: skema_lib_version
+      version_stage: version
+      release_stage: release
+      handoff_stage: handoff
+      adopt_stage: check
+      trigger_downstream: $[[ inputs.trigger_downstream ]]
+      republish_version: $[[ inputs.republish_version ]]
 
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "development"
+    - if: $CI_COMMIT_BRANCH == "main"
 
 stages:
-  - build
   - check
+  - version
+  - build
   - release
   - publish
   - verify
@@ -54,9 +80,12 @@ variables:
   # Inside the project directory so GitLab's cache can actually pick it up;
   # $HOME is not preserved between jobs.
   npm_config_cache: ${CI_PROJECT_DIR}/.npm
-  # Bridge from spec:inputs to scripts that read $SKEMA_LANG_VERSION
-  SKEMA_LANG_VERSION: $[[ inputs.skema_lang_version ]]
-  TRIGGER_DOWNSTREAM: $[[ inputs.trigger_downstream ]]
+
+# Pinned to the same version as the component include above - bump both
+# together. Only jobs that call a skema-ci script directly (not through the
+# component) need this image explicitly.
+.skema_ci_image: &skema_ci_image
+  image: "registry.gitlab.com/skema-language/skema-ci:0.1.0"
 
 # Keyed by the lockfile: the same dependency set reuses the cache, and a
 # changed lockfile starts a fresh one instead of layering onto a stale tree.
@@ -75,36 +104,16 @@ variables:
     //${CI_SERVER_HOST}/api/v4/groups/141817046/-/packages/npm/:_authToken=${CI_JOB_TOKEN}
     EOF
 
-# Install git-cliff for version computation. Callers must install `curl`,
-# `tar` and `ca-certificates` themselves first, with whatever package
-# manager matches their own image — this anchor runs on both Alpine
-# (`release-test`) and Debian (`release`) images and must not assume either.
-.install_git_cliff: &install_git_cliff
-  - |
-    GIT_CLIFF_VERSION=2.10.1
-    GIT_CLIFF_ASSET="git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
-    curl -fsSL -O "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${GIT_CLIFF_ASSET}"
-    curl -fsSL -O "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${GIT_CLIFF_ASSET}.sha512"
-    sha512sum -c "${GIT_CLIFF_ASSET}.sha512"
-    tar -xzf "${GIT_CLIFF_ASSET}" --strip-components=1 -C /usr/local/bin
-
-# A language release publishes generated packages only; `check-model` builds
-# the workspace in that pipeline instead.
-.workspace_rules: &workspace_rules
-  - if: '"$[[ inputs.skema_lang_version ]]" != ""'
-    when: never
-  - when: on_success
-
-# Check jobs skip language-input and tag pipelines.
-.check_rules: &check_rules
-  - if: '"$[[ inputs.skema_lang_version ]]" != ""'
-    when: never
-  - if: $CI_COMMIT_TAG
-    when: never
-  - when: on_success
+# A language input never releases a skema-lib version of its own: added to
+# every component job's rules below ahead of its own branch condition. Skips
+# the component's `adopt_triggered_rule` clause too - moot here, since this
+# repo's include never sets `adopt_groups`.
+.skip_with_language_input: &skip_with_language_input
+  if: '"$[[ inputs.skema_lang_version ]]" != ""'
+  when: never
 
 # --------------------------------------------------------------------------
-# build / check
+# build / check (own release)
 # --------------------------------------------------------------------------
 
 # There is no separate typecheck job on purpose: each package's build is
@@ -113,7 +122,13 @@ variables:
 build:
   stage: build
   cache: *npm_cache
-  rules: *workspace_rules
+  needs:
+    - job: version
+      artifacts: true
+      optional: true
+  rules:
+    - *skip_with_language_input
+    - when: on_success
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
@@ -128,7 +143,9 @@ audit:
   stage: check
   cache: *npm_cache
   needs: []
-  rules: *check_rules
+  rules:
+    - *skip_with_language_input
+    - when: on_success
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
@@ -137,124 +154,66 @@ audit:
   allow_failure: true
 
 # --------------------------------------------------------------------------
-# release
+# release (skema-ci component job, extended)
 # --------------------------------------------------------------------------
+
+# Every component job below is extended the same way: its own rules alone
+# would still fire on a language-input pipeline (also `development`), so
+# `.skip_with_language_input` is prepended. `release` also gets `build`'s
+# artifacts added to its needs - the component only knows about `version`'s
+# patched manifests, but the publish hook packs `*/dist`.
+version:
+  rules:
+    - *skip_with_language_input
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
 
 release:
-  stage: release
-  image: node:22-bookworm-slim
-  needs: []
-  rules:
-    - if: '"$[[ inputs.skema_lang_version ]]" != ""'
-      when: never
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  resource_group: release
-  interruptible: false
-  variables:
-    GIT_DEPTH: 0
-    GIT_STRATEGY: clone
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates curl
-    - *install_git_cliff
-    - git config user.email "${GITLAB_USER_EMAIL:-ci@skema-language}"
-    - git config user.name "${GITLAB_USER_NAME:-skema release}"
-  script:
-    - bash scripts/release.sh
-
-release-test:
-  stage: check
-  image: alpine:latest
-  needs: []
-  rules: *check_rules
-  before_script:
-    - apk add --no-cache bash curl git ca-certificates
-    - *install_git_cliff
-  script:
-    - bash scripts/release-test.sh
-
-version-check:
-  stage: check
-  image: node:22-alpine
-  needs: []
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    - node scripts/check-release.mjs "$CI_COMMIT_TAG"
-
-# --------------------------------------------------------------------------
-# publish
-# --------------------------------------------------------------------------
-
-# Uploading and tagging cannot be taken back, so a newer pipeline must not
-# cancel it halfway.
-.release: &release
-  stage: publish
-  interruptible: false
-  before_script:
-    - apk add --no-cache git
-    - |
-      cat >> "$HOME/.npmrc" <<EOF
-      //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
-      EOF
-    - git config user.email "${GITLAB_USER_EMAIL:-ci@skema-language}"
-    - git config user.name "${GITLAB_USER_NAME:-skema release}"
-    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
-  artifacts:
-    paths:
-      - handoff.yml
-    expire_in: 1 week
-
-publish-packages:
-  stage: publish
-  interruptible: false
   needs:
+    - job: version
+      artifacts: true
     - job: build
       artifacts: true
-    - version-check
   rules:
-    - if: $CI_COMMIT_TAG
-  before_script:
-    - apk add --no-cache git
-    - |
-      cat >> "$HOME/.npmrc" <<EOF
-      //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
-      EOF
-  script:
-    - node scripts/publish.mjs $(node -p "require('./package.json').workspaces.join(' ')")
-    - node scripts/handoff.mjs skema_lib_version "$CI_COMMIT_TAG" > handoff.yml
-  artifacts:
-    paths:
-      - handoff.yml
-    expire_in: 1 week
+    - *skip_with_language_input
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
+
+promote-mr:
+  rules:
+    - *skip_with_language_input
+    - if: '$CI_COMMIT_BRANCH == "development"'
+
+back-merge:
+  rules:
+    - *skip_with_language_input
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+handoff:
+  rules:
+    - *skip_with_language_input
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
+
+# --------------------------------------------------------------------------
+# language pipeline (skema_lang_version input)
+# --------------------------------------------------------------------------
 
 publish-language-packages:
+  <<: *skema_ci_image
   stage: publish
   interruptible: false
   needs: []
   rules:
     - if: '"$[[ inputs.skema_lang_version ]]" != ""'
+  variables:
+    SKEMA_LANG_VERSION: $[[ inputs.skema_lang_version ]]
   before_script:
-    - apk add --no-cache git
-    - |
-      cat >> "$HOME/.npmrc" <<EOF
-      //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
-      EOF
+    - echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> "$HOME/.npmrc"
   script:
     - node wasm-packaging/scripts/fetch-artifact.mjs "$SKEMA_LANG_VERSION"
     - node wasm-packaging/scripts/build-model-package.mjs "$SKEMA_LANG_VERSION"
     - node wasm-packaging/scripts/build-wasm-package.mjs "$SKEMA_LANG_VERSION"
-    # Model first: @skema/wasm pins it exactly.
-    - node scripts/publish.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
-    # Handed down even when already published, so rerunning a language release retries the adoption.
-    - node scripts/handoff.mjs skema_lang_version "$SKEMA_LANG_VERSION" > handoff.yml
-  artifacts:
-    paths:
-      - handoff.yml
-    expire_in: 1 week
-
-# --------------------------------------------------------------------------
-# verify (language releases)
-# --------------------------------------------------------------------------
+    # Model first: @skema/wasm pins it exactly. publish-npm.mjs tags a
+    # prerelease `rc` and only a final moves `latest`, per package.
+    - publish-npm.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
 
 # @skema/diagram and @skema/docs take @skema/model as a peer without an upper
 # bound, so a new language version is where an incompatible model shows up.
@@ -265,6 +224,8 @@ check-model:
     - publish-language-packages
   rules:
     - if: '"$[[ inputs.skema_lang_version ]]" != ""'
+  variables:
+    SKEMA_LANG_VERSION: $[[ inputs.skema_lang_version ]]
   before_script: *npm_auth
   script:
     - npm ci --prefer-offline --no-audit --fund=false
@@ -274,31 +235,49 @@ check-model:
     - npm install --prefer-online --no-audit --fund=false
     - npm run build
 
-# --------------------------------------------------------------------------
-# handoff
-# --------------------------------------------------------------------------
-
-handoff-packages:
-  stage: handoff
-  needs:
-    - publish-packages
-  rules:
-    - if: '$CI_COMMIT_TAG && "$[[ inputs.trigger_downstream ]]" == "true"'
-  trigger:
-    include:
-      - artifact: handoff.yml
-        job: publish-packages
-    strategy: mirror
-
+# A separate pair from the component's own `handoff`/`trigger-downstream`:
+# those hand down `skema_lib_version` from a real release, this hands down
+# `skema_lang_version` from a language input, to the same two dependants.
+# `handoff_input_name` is one static string per component include, so the two
+# input names can't share that job - the shape below is JSON (JSON is YAML),
+# the same one skema-ci's own handoff job writes.
 handoff-language:
   stage: handoff
   needs:
     - publish-language-packages
     - check-model
   rules:
-    - if: '"$[[ inputs.skema_lang_version ]]" != "" && "$[[ inputs.trigger_downstream ]]" == "true"'
+    - if: '"$[[ inputs.skema_lang_version ]]" != ""'
+  variables:
+    SKEMA_LANG_VERSION: $[[ inputs.skema_lang_version ]]
+    TRIGGER_DOWNSTREAM: $[[ inputs.trigger_downstream ]]
+  script:
+    - |
+      if [ "$TRIGGER_DOWNSTREAM" != "true" ]; then
+        echo "handoff-language: trigger_downstream is false, nothing to hand down."
+        : > handoff.yml
+        exit 0
+      fi
+      cat > handoff.yml <<EOF
+      {
+        "skema-editor": {"trigger": {"project": "skema-language/skema-editor", "branch": "development", "strategy": "mirror", "inputs": {"skema_lang_version": "$SKEMA_LANG_VERSION", "trigger_downstream": $TRIGGER_DOWNSTREAM}}},
+        "skema-vscode": {"trigger": {"project": "skema-language/skema-vscode", "branch": "development", "strategy": "mirror", "inputs": {"skema_lang_version": "$SKEMA_LANG_VERSION", "trigger_downstream": $TRIGGER_DOWNSTREAM}}}
+      }
+      EOF
+  artifacts:
+    paths:
+      - handoff.yml
+    expire_in: 1 day
+
+trigger-language:
+  stage: handoff
+  needs:
+    - job: handoff-language
+      artifacts: true
+  rules:
+    - if: '"$[[ inputs.skema_lang_version ]]" != ""'
   trigger:
     include:
       - artifact: handoff.yml
-        job: publish-language-packages
+        job: handoff-language
     strategy: mirror

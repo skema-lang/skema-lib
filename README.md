@@ -37,26 +37,20 @@ TypeScript's resolution of `@skema/model`).
 
 ## Release
 
-Every package carries its own version. A push to `main` publishes each
-workspace package whose `version` is not in this project's
-[GitLab Package Registry](https://gitlab.com/skema-language/skema-lib/-/packages)
-yet, and tags the commit `<name>@<version>`. Releasing one is:
-
-```bash
-# bump "version" in that package's package.json
-git commit -am "chore(release): @skema/diagram@X.Y.Z"
-git push origin main
-```
-
-`@skema/model` and `@skema/wasm` are not workspace packages: a language release
-triggers this repo with `SKEMA_LANG_VERSION`, and CI publishes both at the
-language's version ([wasm-packaging/](wasm-packaging)). Either way the pipeline
-ends by handing the exact versions it released to skema-editor and
-skema-vscode, which pin them and release under their own versions.
+`@skema/diagram`, `@skema/docs` and `@skema/collab-protocol` share one version,
+released through the skema-ci component on a push to `development` (RC) or a
+merge to `main` (final). `@skema/model` and `@skema/wasm` are not workspace
+packages: a `skema_lang_version` pipeline input publishes both at the
+language's version instead ([wasm-packaging/](wasm-packaging)) and never
+releases a skema-lib version of its own. Either path ends by handing the
+versions it published down to skema-editor and skema-vscode.
 
 `@skema/diagram` and `@skema/docs` take `@skema/model` as a peer dependency, so
-the app decides which model it runs; a language release checks that every
+the app decides which model it runs; a language input checks that every
 package here still builds against the new one (`check-model`).
+
+Mechanism and job contracts: [CLAUDE.md, "Releasing — the
+chain"](../CLAUDE.md), [brain/release-chain.md](../brain/release-chain.md).
 
 Both the `@skema` scope and the publish target are configured in the repo:
 `.npmrc` points the scope at the skema-language **group** endpoint, which

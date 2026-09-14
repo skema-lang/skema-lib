@@ -19,7 +19,11 @@ import { fileURLToPath } from "node:url";
 
 const version = process.argv[2];
 if (!version) {
-  console.error("usage: fetch-artifact.mjs <tag>  (e.g. v0.3.2)");
+  console.error("usage: fetch-artifact.mjs <tag>  (e.g. v0.3.2 or v0.3.2-rc.1)");
+  process.exit(2);
+}
+if (!/^v\d+\.\d+\.\d+(-rc\.\d+)?$/.test(version)) {
+  console.error(`Invalid tag format: ${version}. Must be vX.Y.Z or vX.Y.Z-rc.N`);
   process.exit(2);
 }
 

@@ -27,17 +27,22 @@ nature, so it lives here instead.
 
 ## Releasing a new version
 
-CI does it: a language tag triggers skema-lib with `SKEMA_LANG_VERSION`
-(`publish-language-packages` in [.gitlab-ci.yml](../.gitlab-ci.yml)). To
-release a language version again, run the skema-lib pipeline on `main` with
-that variable set. The job runs, from the repo root:
+CI does it: skema-lang hands its release down with the `skema_lang_version`
+input, which runs `publish-language-packages` in
+[.gitlab-ci.yml](../.gitlab-ci.yml). To publish a language version again, run
+the skema-lib pipeline on `development` with that input set (`vX.Y.Z` or an
+RC `vX.Y.Z-rc.N`). The job runs, from the repo root:
 
 ```bash
 node wasm-packaging/scripts/fetch-artifact.mjs v0.3.2       # → pkg
 node wasm-packaging/scripts/build-model-package.mjs 0.3.2   # → npm/model
 node wasm-packaging/scripts/build-wasm-package.mjs 0.3.2    # → npm/wasm (pins npm/model)
-node scripts/publish.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
+publish-npm.mjs wasm-packaging/npm/model wasm-packaging/npm/wasm
 ```
+
+`publish-npm.mjs` is skema-ci's, on `PATH` in its image
+(`registry.gitlab.com/skema-language/skema-ci`) - not installed locally. It
+tags a prerelease `rc`; only a final moves `latest`.
 
 The version given to `build-*-package.mjs` must be the exact `skema-lang` tag
 `fetch-artifact.mjs` downloaded - the two describe the same wasm-bindgen

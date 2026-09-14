@@ -26,7 +26,11 @@ const RUNTIME_FILES = ["skema_wasm.js", "skema_wasm_bg.wasm", "skema_wasm_bg.was
 
 const version = (process.argv[2] ?? "").replace(/^v/, "");
 if (!version) {
-  console.error("usage: build-wasm-package.mjs <version>  (e.g. 0.3.2 or v0.3.2)");
+  console.error("usage: build-wasm-package.mjs <version>  (e.g. 0.3.2 or v0.3.2-rc.1)");
+  process.exit(2);
+}
+if (!/^\d+\.\d+\.\d+(-rc\.\d+)?$/.test(version)) {
+  console.error(`Invalid version: ${version}. Must be X.Y.Z or X.Y.Z-rc.N`);
   process.exit(2);
 }
 
