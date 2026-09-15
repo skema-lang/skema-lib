@@ -85,7 +85,7 @@ variables:
 # together. Only jobs that call a skema-ci script directly (not through the
 # component) need this image explicitly.
 .skema_ci_image: &skema_ci_image
-  image: "registry.gitlab.com/skema-language/skema-ci:0.1.0"
+  image: "registry.gitlab.com/skema-language/skema-ci:0.1.3"
 
 # Keyed by the lockfile: the same dependency set reuses the cache, and a
 # changed lockfile starts a fresh one instead of layering onto a stale tree.

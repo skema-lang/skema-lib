@@ -17,6 +17,7 @@
  */
 import type {
   ExportedEnum,
+  ExportedExampleRow,
   ExportedField,
   ExportedFlag,
   ExportedGroup,
@@ -62,6 +63,33 @@ function isBackReference(field: ExportedField): boolean {
   return field.relation?.kind === "ManyToOne";
 }
 
+/** A `Record`'s value for one field, linked to its relation's target table
+ *  section when the field is a relationship. */
+function exampleCell(field: ExportedField, row: ExportedExampleRow): string {
+  const flag = row.values.find((value) => value.name === field.name);
+  if (!flag) return "";
+
+  const text = cell(typeof flag.value === "boolean" ? String(flag.value) : flag.value);
+  const relation = field.relation;
+  return relation ? `[${text}](#${qualified(relation.targetNamespace, relation.targetTable)})` : text;
+}
+
+/** One table per `Example` block, columns matching the Columns table above
+ *  (back-references excluded the same way). */
+function exampleSection(columns: ExportedField[], examples: ExportedExampleRow[]): string[] {
+  const lines = [
+    "**Examples**",
+    "",
+    `| ${columns.map((field) => cell(field.name)).join(" | ")} |`,
+    `| ${columns.map(() => "---").join(" | ")} |`,
+  ];
+  for (const row of examples) {
+    lines.push(`| ${columns.map((field) => exampleCell(field, row)).join(" | ")} |`);
+  }
+  lines.push("");
+  return lines;
+}
+
 function tableSection(table: ExportedTable, getNote: NoteLookup): string[] {
   const lines: string[] = [`### ${table.name}`, ""];
 
@@ -87,6 +115,10 @@ function tableSection(table: ExportedTable, getNote: NoteLookup): string[] {
       );
     }
     lines.push("");
+  }
+
+  if (columns.length > 0 && table.examples.length > 0) {
+    lines.push(...exampleSection(columns, table.examples));
   }
 
   const backReferences = table.fields.filter(isBackReference);
