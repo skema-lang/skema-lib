@@ -254,8 +254,17 @@ handoff-language:
   script:
     - |
       if [ "$TRIGGER_DOWNSTREAM" != "true" ]; then
+        # An empty child config is refused outright ("File `handoff.yml` is
+        # empty!"), and trigger-language's rules were evaluated before this
+        # job ran, so it cannot be skipped from here.
         echo "handoff-language: trigger_downstream is false, nothing to hand down."
-        : > handoff.yml
+        cat > handoff.yml <<'EOF'
+      no-handoff:
+        stage: handoff
+        image: alpine:latest
+        script:
+          - echo "nothing to hand down"
+      EOF
         exit 0
       fi
       cat > handoff.yml <<EOF
