@@ -28,9 +28,9 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@skema/model": ">=0.1.4"
+    "@skema/model": ">=0.2.2"
   },
   "devDependencies": {
-    "@skema/model": "0.1.4"
+    "@skema/model": "0.2.2"
   }
 }

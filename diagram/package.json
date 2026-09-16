@@ -37,7 +37,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@skema/model": "0.1.4",
+    "@skema/model": "0.2.2",
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.8",
     "@xyflow/react": "^12.11.6",
