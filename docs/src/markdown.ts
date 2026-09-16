@@ -38,12 +38,20 @@ function qualified(namespace: string, name: string): string {
   return namespace ? `${namespace}.${name}` : name;
 }
 
-/** `varchar(120)`, or the relationship exactly as it is written. */
+/** Generate a deterministic Markdown anchor from an entity name. */
+function makeAnchor(name: string): string {
+  return name.toLowerCase();
+}
+
+/** `varchar(120)`, or the relationship exactly as it is written.
+ *  Relations are wrapped in Markdown links to their target table section. */
 function typeOf(field: ExportedField): string {
   const relation = field.relation;
   if (relation) {
     const arrow = relation.kind === "ManyToOne" ? "<" : relation.kind === "OneToOne" ? "-" : ">";
-    return `${arrow}${qualified(relation.targetNamespace, relation.targetTable)}.${relation.targetField}`;
+    const linkText = `${arrow}${qualified(relation.targetNamespace, relation.targetTable)}.${relation.targetField}`;
+    const anchor = makeAnchor(relation.targetTable);
+    return `[${linkText}](#${anchor})`;
   }
   return field.ty.args.length > 0
     ? `${field.ty.name}(${field.ty.args.join(", ")})`
