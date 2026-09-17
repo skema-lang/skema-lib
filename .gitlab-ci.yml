@@ -39,7 +39,7 @@ spec:
 ##     skema-language/skema-lib in their own allowlist.
 
 include:
-  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.5
+  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.6
     inputs:
       version_file_kind: npm-workspaces
       version_file_paths: "diagram/package.json docs/package.json collab-protocol/package.json package-lock.json"
