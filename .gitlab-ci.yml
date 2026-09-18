@@ -39,13 +39,13 @@ spec:
 ##     skema-language/skema-lib in their own allowlist.
 
 include:
-  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.7
+  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.8
     inputs:
       version_file_kind: npm-workspaces
       version_file_paths: "diagram/package.json docs/package.json collab-protocol/package.json package-lock.json"
       version_file_workspaces: "diagram docs collab-protocol"
       publish_hook: >-
-        echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> "$HOME/.npmrc" &&
+        echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> "${CI_PROJECT_DIR}/.npmrc" &&
         publish-npm.mjs diagram docs collab-protocol
       dependants: "skema-language/skema-editor,skema-language/skema-vscode"
       handoff_input_name: skema_lib_version
@@ -78,7 +78,8 @@ default:
 
 variables:
   # Inside the project directory so GitLab's cache can actually pick it up;
-  # $HOME is not preserved between jobs.
+  # $CI_PROJECT_DIR, not $HOME: GitLab expands the value before the shell
+  # sees it, and $HOME is not a CI variable - it expands to nothing.
   npm_config_cache: ${CI_PROJECT_DIR}/.npm
 
 # Pinned to the same version as the component include above - bump both
@@ -100,7 +101,7 @@ variables:
 # Insurance for the day a project in the group goes private; anonymous today.
 .npm_auth: &npm_auth
   - |
-    cat >> "$HOME/.npmrc" <<EOF
+    cat >> "${CI_PROJECT_DIR}/.npmrc" <<EOF
     //${CI_SERVER_HOST}/api/v4/groups/141817046/-/packages/npm/:_authToken=${CI_JOB_TOKEN}
     EOF
 
@@ -206,7 +207,7 @@ publish-language-packages:
   variables:
     SKEMA_LANG_VERSION: $[[ inputs.skema_lang_version ]]
   before_script:
-    - echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> "$HOME/.npmrc"
+    - echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> "${CI_PROJECT_DIR}/.npmrc"
   script:
     - node wasm-packaging/scripts/fetch-artifact.mjs "$SKEMA_LANG_VERSION"
     - node wasm-packaging/scripts/build-model-package.mjs "$SKEMA_LANG_VERSION"
