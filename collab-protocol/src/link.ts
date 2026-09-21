@@ -11,6 +11,11 @@
 export type LinkKind = "manual" | "auto";
 export type LinkStatus = "connecting" | "connected" | "failed" | "closed";
 
+/** Labels for a `Link`'s two WebRTC data channels - shared so every host
+ *  opens the same channel names regardless of transport. */
+export const DOC_CHANNEL_LABEL = "skema-doc";
+export const AWARENESS_CHANNEL_LABEL = "skema-awareness";
+
 export interface LinkEvents {
   onDoc(message: Uint8Array, link: Link): void;
   onAwareness(message: Uint8Array, link: Link): void;
