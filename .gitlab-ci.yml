@@ -193,6 +193,12 @@ handoff:
     - *skip_with_language_input
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
 
+# Needs `handoff`; left in alone, it gets the pipeline refused at creation.
+trigger-downstream:
+  rules:
+    - *skip_with_language_input
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
+
 # --------------------------------------------------------------------------
 # language pipeline (skema_lang_version input)
 # --------------------------------------------------------------------------

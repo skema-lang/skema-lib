@@ -32,10 +32,10 @@ const pkgDir = join(root, "pkg");
 
 const host = process.env.SKEMA_REGISTRY ?? "https://gitlab.com";
 const project = process.env.SKEMA_PROJECT ?? "skema-language/skema";
-const url = `${host}/api/v4/projects/${encodeURIComponent(project)}/packages/generic/skema/${version}/skema-wasm.tar.gz`;
+const packageUrl = (packageVersion) =>
+  `${host}/api/v4/projects/${encodeURIComponent(project)}/packages/generic/skema/${packageVersion}/skema-wasm.tar.gz`;
 
 console.log(`Fetching skema-wasm.tar.gz (${version})`);
-console.log(`  ${url}`);
 
 // A private project needs a token; a public one needs none - same fallback
 // order as fetch-server.mjs.
@@ -43,7 +43,13 @@ const headers = {};
 if (process.env.CI_JOB_TOKEN) headers["JOB-TOKEN"] = process.env.CI_JOB_TOKEN;
 else if (process.env.GITLAB_TOKEN) headers["PRIVATE-TOKEN"] = process.env.GITLAB_TOKEN;
 
-const response = await fetch(url, { headers });
+// skema-ci publishes under the bare version; releases before 0.3.0 used the tag.
+let response;
+for (const packageVersion of [version.replace(/^v/, ""), version]) {
+  console.log(`  ${packageUrl(packageVersion)}`);
+  response = await fetch(packageUrl(packageVersion), { headers });
+  if (response.status !== 404) break;
+}
 if (!response.ok) {
   console.error(`${response.status} ${response.statusText} - is ${version} tagged and published?`);
   process.exit(1);

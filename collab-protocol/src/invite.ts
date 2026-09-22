@@ -59,6 +59,11 @@ export function inviteId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+/** The broker room id a host listens on for an auto invite. */
+export function brokerRoomId(): string {
+  return `skema-${inviteId()}`;
+}
+
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /**
@@ -118,11 +123,31 @@ export function decodeInvite(token: string): Invite | undefined {
   }
 }
 
-/** The token out of whatever was pasted: a whole link or the token alone. */
+/** skema-vscode's own publisher.name id, from its `package.json`. */
+export const VSCODE_EXTENSION_ID = "skema.skemavscode";
+
+/** The `vscode://` link a browser hands an invite to VS Code with. No
+ *  URL-encoding: base64url is already URL-safe. */
+export function vscodeJoinUri(token: string, scheme = "vscode"): string {
+  return `${scheme}://${VSCODE_EXTENSION_ID}/join?${FRAGMENT_KEY}=${token}`;
+}
+
+const QUERY_MARKER = new RegExp(`[?&]${FRAGMENT_KEY}=([^&#]*)`);
+
+function asToken(candidate: string): string | undefined {
+  return /^[A-Za-z0-9_-]+$/.test(candidate) ? candidate : undefined;
+}
+
+/** The token out of whatever was pasted: a whole link (editor `#collab=` or
+ *  vscode `?collab=`) or the token alone. */
 export function tokenFromText(text: string): string | undefined {
   const trimmed = text.trim();
-  const marker = `#${FRAGMENT_KEY}=`;
-  const at = trimmed.indexOf(marker);
-  const token = at === -1 ? trimmed : trimmed.slice(at + marker.length);
-  return /^[A-Za-z0-9_-]+$/.test(token) ? token : undefined;
+  const fragmentMarker = `#${FRAGMENT_KEY}=`;
+  const fragmentAt = trimmed.indexOf(fragmentMarker);
+  if (fragmentAt !== -1) return asToken(trimmed.slice(fragmentAt + fragmentMarker.length));
+
+  const queryMatch = trimmed.match(QUERY_MARKER);
+  if (queryMatch) return asToken(queryMatch[1] ?? "");
+
+  return asToken(trimmed);
 }
