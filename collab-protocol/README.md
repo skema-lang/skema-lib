@@ -12,9 +12,14 @@ sync at all:
 
 - `protocol.ts` — how a Yjs sync/awareness message is framed on the wire.
 - `link.ts` — the `Link` transport interface a session programs against,
-  regardless of how the two hosts found each other.
+  regardless of how the two hosts found each other, plus its two data
+  channel labels, `DOC_CHANNEL_LABEL`/`AWARENESS_CHANNEL_LABEL`.
 - `invite.ts` — the `Invite` data shapes and their encode/decode functions
-  (base64url over a deflated, JSON-serialized invite).
+  (base64url over a deflated, JSON-serialized invite); `brokerRoomId()` for
+  the room an auto invite resolves through; `VSCODE_EXTENSION_ID` and
+  `vscodeJoinUri()` for the `vscode://` link a browser hands an invite to
+  VS Code with; `tokenFromText()` reads a token back out of any of these
+  forms, or a bare token.
 - `projectMap.ts` — the shared project's `Y.Doc` shape: which key holds the
   `Y.Text` per file, which key names the root. `skema-editor`'s
   `collab/projectBinding.ts` and `skema-vscode`'s `collab/projectSync.ts`
