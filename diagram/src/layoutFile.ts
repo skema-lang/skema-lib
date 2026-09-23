@@ -22,6 +22,7 @@ export interface EdgeLayout {
 export interface DiagramLayout {
   nodes: Record<string, Position>;
   edges: Record<string, EdgeLayout>;
+  hiddenEdges: string[];
 }
 
 export const LAYOUT_DIRECTORY = ".skema";
@@ -30,11 +31,11 @@ export const LAYOUT_FILE = `${LAYOUT_DIRECTORY}/layout.json`;
 const FORMAT = 1;
 
 export function emptyLayout(): DiagramLayout {
-  return { nodes: {}, edges: {} };
+  return { nodes: {}, edges: {}, hiddenEdges: [] };
 }
 
 export function isEmptyLayout(layout: DiagramLayout): boolean {
-  return Object.keys(layout.nodes).length === 0 && Object.keys(layout.edges).length === 0;
+  return Object.keys(layout.nodes).length === 0 && Object.keys(layout.edges).length === 0 && layout.hiddenEdges.length === 0;
 }
 
 /** Anything unreadable yields an empty layout: a broken or hand-edited file
@@ -48,8 +49,8 @@ export function parseLayout(text: string): DiagramLayout {
   }
   if (typeof raw !== "object" || raw === null) return emptyLayout();
 
-  const { nodes, edges } = raw as { nodes?: unknown; edges?: unknown };
-  return { nodes: readNodes(nodes), edges: readEdges(edges) };
+  const { nodes, edges, hiddenEdges } = raw as { nodes?: unknown; edges?: unknown; hiddenEdges?: unknown };
+  return { nodes: readNodes(nodes), edges: readEdges(edges), hiddenEdges: readHiddenEdges(hiddenEdges) };
 }
 
 export function serializeLayout(layout: DiagramLayout): string {
@@ -65,7 +66,9 @@ export function serializeLayout(layout: DiagramLayout): string {
     if (points && points.length > 0) edges[id] = { points: points.map(round) };
   }
 
-  return `${JSON.stringify({ format: FORMAT, nodes, edges }, null, 2)}\n`;
+  const hiddenEdges = [...new Set(layout.hiddenEdges)].sort();
+
+  return `${JSON.stringify({ format: FORMAT, nodes, edges, hiddenEdges }, null, 2)}\n`;
 }
 
 /** Whole pixels: a drag reports fractions that no one can see and that would
@@ -103,4 +106,9 @@ function readEdges(raw: unknown): Record<string, EdgeLayout> {
     if (read.length > 0) edges[id] = { points: read };
   }
   return edges;
+}
+
+function readHiddenEdges(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === "string");
 }

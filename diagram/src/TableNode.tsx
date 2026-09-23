@@ -12,7 +12,7 @@ import type { JSX } from "react";
 import type { ExportedField } from "@skema/model";
 import { useDiagramChrome, useReveal } from "./context";
 import { sourceLabel, tableFacts } from "./details";
-import type { TableNodeData } from "./graph";
+import { tableId, type RelationEdge, type TableNodeData } from "./graph";
 import { nodeStyleVariables } from "./style";
 import { TableNodeRow } from "./TableNodeRow";
 
@@ -21,16 +21,19 @@ export const NODE_WIDTH = 260;
 export const ROW_HEIGHT = 22;
 export const HEADER_HEIGHT = 34;
 
+const NO_ROW_EDGES: RelationEdge[] = [];
+
 export function nodeHeight(data: TableNodeData): number {
   const rows = data.columns.length + data.backReferences.length;
   return HEADER_HEIGHT + rows * ROW_HEIGHT + 8;
 }
 
 export function TableNode({ data, selected }: NodeProps): JSX.Element {
-  const { table, columns, backReferences, style } = data as unknown as TableNodeData;
+  const { table, columns, backReferences, style, rowEdges } = data as unknown as TableNodeData;
   const { DetailCard } = useDiagramChrome();
   const { revealTable, revealField } = useReveal();
   const openField = (field: ExportedField): void => revealField(field);
+  const nodeId = tableId(table.namespace, table.name);
 
   return (
     <div
@@ -61,6 +64,8 @@ export function TableNode({ data, selected }: NodeProps): JSX.Element {
             key={field.name}
             field={field}
             tableFile={table.file}
+            nodeId={nodeId}
+            edges={rowEdges[field.name] ?? NO_ROW_EDGES}
             onOpen={openField}
           />
         ))}
@@ -69,6 +74,8 @@ export function TableNode({ data, selected }: NodeProps): JSX.Element {
             key={field.name}
             field={field}
             tableFile={table.file}
+            nodeId={nodeId}
+            edges={rowEdges[field.name] ?? NO_ROW_EDGES}
             onOpen={openField}
           />
         ))}

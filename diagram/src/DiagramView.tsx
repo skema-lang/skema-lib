@@ -33,7 +33,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import type { Location } from "@skema/model";
-import { DiagramContextProvider } from "./context";
+import { DiagramContextProvider, DiagramInteractionProvider, type HoveredRow } from "./context";
 import { EnumNode, enumNodeHeight } from "./EnumNode";
 import { GROUP_DRAG_HANDLE, GroupNode } from "./GroupNode";
 import {
@@ -65,6 +65,7 @@ import {
   tableId,
   targetHandleId,
   type EnumNodeData,
+  type RelationEdge,
   type TableNodeData,
 } from "./graph";
 import { layoutGraph } from "./layout";
@@ -100,6 +101,15 @@ type NodeEntry =
 function entryHeight(entry: NodeEntry): number {
   return entry.kind === "table" ? nodeHeight(entry.data) : enumNodeHeight(entry.data);
 }
+
+/** The edges the hovered row highlights - empty for anything but a table
+ *  row, and for a row whose own edge never resolved. */
+function edgesForHoveredRow(data: Map<string, NodeEntry>, hovered: HoveredRow): RelationEdge[] {
+  const entry = data.get(hovered.nodeId);
+  return entry && entry.kind === "table" ? (entry.data.rowEdges[hovered.field] ?? []) : [];
+}
+
+const EMPTY_HIGHLIGHT = new Set<string>();
 
 /** Everything about a node that the model decides, as opposed to what the
  *  canvas does: selection, measured size and an in-flight drag are not in
@@ -221,7 +231,7 @@ function DiagramCanvas({
       const style = resolveTableStyle(projectStyles, table.file, readStyleClasses(meta?.entries));
       data.set(tableId(table.namespace, table.name), {
         kind: "table",
-        data: nodeData(table, style),
+        data: nodeData(table, style, relations),
       });
     }
     for (const en of exported.enums) {
@@ -346,7 +356,7 @@ function DiagramCanvas({
     }
 
     const positions = new Map(specs.map((spec) => [spec.id, spec.position]));
-    return { specs, positions, frames, relations, relationStyles };
+    return { specs, positions, frames, relations, relationStyles, data };
   }, [source]);
 
   // Project-wide: the same for every node, so it is resolved once and
@@ -431,6 +441,39 @@ function DiagramCanvas({
     [layout, saveLayout],
   );
 
+  // Hover lives here, apart from `hiddenEdgeIds`/`toggleHidden`: rows only
+  // ever get the stable setter through `DiagramInteractionProvider`, so a
+  // hover re-renders this component and the edges memo below, never a node.
+  const [hoveredRow, setHoveredRow] = useState<HoveredRow | null>(null);
+
+  const hiddenEdgeIds = useMemo(() => new Set(layout?.hiddenEdges ?? []), [layout]);
+
+  const toggleHidden = useCallback(
+    (edgeId: string) => {
+      const base = layout ?? emptyLayout();
+      const hidden = new Set(base.hiddenEdges);
+      if (hidden.has(edgeId)) hidden.delete(edgeId);
+      else hidden.add(edgeId);
+      saveLayout({ ...base, hiddenEdges: [...hidden] });
+    },
+    [layout, saveLayout],
+  );
+
+  const showAllEdges = useCallback(() => {
+    saveLayout({ ...(layout ?? emptyLayout()), hiddenEdges: [] });
+  }, [layout, saveLayout]);
+
+  // Stale ids (task 104) do not count as "current" hidden edges.
+  const hiddenEdgeCount = useMemo(
+    () => (model ? model.relations.filter((relation) => hiddenEdgeIds.has(relation.id)).length : 0),
+    [model, hiddenEdgeIds],
+  );
+
+  const interaction = useMemo(
+    () => ({ hiddenEdgeIds, toggleHidden, setHoveredRow, hiddenEdgeCount, showAllEdges }),
+    [hiddenEdgeIds, toggleHidden, hiddenEdgeCount, showAllEdges],
+  );
+
   const edges = useMemo((): Edge[] => {
     if (!model) return [];
     const rightAngle = edgeRouting === "step" || edgeRouting === "smoothstep";
@@ -445,9 +488,13 @@ function DiagramCanvas({
       const parent = node.parentId ? byId.get(node.parentId) : undefined;
       return parent ? { x: node.position.x + parent.position.x } : node.position;
     };
+    const highlighted = hoveredRow
+      ? new Set(edgesForHoveredRow(model.data, hoveredRow).map((edge) => edge.id))
+      : EMPTY_HIGHLIGHT;
 
     return model.relations.map((relation) => {
       const sides = edgeSides(positionOf(relation.source), positionOf(relation.target), NODE_WIDTH);
+      const isHighlighted = highlighted.has(relation.id);
       return {
         id: relation.id,
         source: relation.source,
@@ -462,8 +509,18 @@ function DiagramCanvas({
           : {}),
         type: rightAngle ? "waypoint" : edgeRouting,
         label: relation.label,
-        className: relation.oneToOne ? "edge-one-to-one" : "edge-one-to-many",
-        style: edgeStyleVariables(model.relationStyles.get(relation.id) ?? {}) as CSSProperties,
+        className: `${relation.oneToOne ? "edge-one-to-one" : "edge-one-to-many"}${
+          isHighlighted ? " is-highlighted" : ""
+        }`,
+        // A hidden edge is still drawn, never removed, while its row is
+        // hovered - `hidden` is a draw flag, not the source of truth.
+        hidden: hiddenEdgeIds.has(relation.id) && !isHighlighted,
+        animated: isHighlighted,
+        ...(isHighlighted ? { zIndex: 1000 } : {}),
+        style: {
+          ...edgeStyleVariables(model.relationStyles.get(relation.id) ?? {}),
+          ...(isHighlighted ? { "--edge-line-color": "var(--sk-edge-highlight, #3b82f6)" } : {}),
+        } as CSSProperties,
         data: {
           location: relation.location,
           ...(rightAngle
@@ -476,7 +533,7 @@ function DiagramCanvas({
         },
       };
     });
-  }, [model, nodes, edgeRouting, layout, saveEdgePoints]);
+  }, [model, nodes, edgeRouting, layout, saveEdgePoints, hoveredRow, hiddenEdgeIds]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     for (const change of changes) {
@@ -622,45 +679,47 @@ function DiagramCanvas({
   }
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      style={projectStyle as CSSProperties}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      onNodesChange={onNodesChange}
-      onNodeDragStart={onNodeDragStart}
-      onNodeDrag={onNodeDrag}
-      onNodeDragStop={onNodeDragStop}
-      onSelectionDrag={onSelectionDrag}
-      onSelectionDragStop={onSelectionDragStop}
-      onEdgeClick={onEdgeClick}
-      snapToGrid={snapToGrid}
-      snapGrid={[gridSize, gridSize]}
-      // Shift-drag on the canvas draws a selection box; Shift/Ctrl-click
-      // adds a table to the selection, and a selection drags as one.
-      multiSelectionKeyCode={["Shift", "Control", "Meta"]}
-      selectionOnDrag={false}
-      selectNodesOnDrag={false}
-      elevateNodesOnSelect
-      fitView
-      proOptions={{ hideAttribution: false }}
-      minZoom={0.15}
-    >
-      {Toolbar ? <Toolbar /> : null}
-      <Background gap={snapToGrid ? gridSize : 18} size={1} />
-      <Controls showInteractive={false} />
-      <MiniMap
-        pannable
-        zoomable
-        // The defaults are tuned for a light canvas and render as a grey
-        // slab on this one.
-        bgColor="var(--sk-surface)"
-        maskColor="rgba(20, 22, 28, 0.72)"
-        nodeColor="var(--sk-surface-raised)"
-        nodeStrokeColor="var(--sk-border)"
-      />
-    </ReactFlow>
+    <DiagramInteractionProvider value={interaction}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        style={projectStyle as CSSProperties}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onNodeDragStop}
+        onSelectionDrag={onSelectionDrag}
+        onSelectionDragStop={onSelectionDragStop}
+        onEdgeClick={onEdgeClick}
+        snapToGrid={snapToGrid}
+        snapGrid={[gridSize, gridSize]}
+        // Shift-drag on the canvas draws a selection box; Shift/Ctrl-click
+        // adds a table to the selection, and a selection drags as one.
+        multiSelectionKeyCode={["Shift", "Control", "Meta"]}
+        selectionOnDrag={false}
+        selectNodesOnDrag={false}
+        elevateNodesOnSelect
+        fitView
+        proOptions={{ hideAttribution: false }}
+        minZoom={0.15}
+      >
+        {Toolbar ? <Toolbar /> : null}
+        <Background gap={snapToGrid ? gridSize : 18} size={1} />
+        <Controls showInteractive={false} />
+        <MiniMap
+          pannable
+          zoomable
+          // The defaults are tuned for a light canvas and render as a grey
+          // slab on this one.
+          bgColor="var(--sk-surface)"
+          maskColor="rgba(20, 22, 28, 0.72)"
+          nodeColor="var(--sk-surface-raised)"
+          nodeStrokeColor="var(--sk-border)"
+        />
+      </ReactFlow>
+    </DiagramInteractionProvider>
   );
 }
 
