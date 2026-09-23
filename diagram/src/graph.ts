@@ -35,6 +35,8 @@ export interface TableNodeData {
   /** Back-references, shown as "has many" hints rather than columns. */
   backReferences: ExportedField[];
   style: ResolvedStyle;
+  /** Each field's own edges, by name - see `edgesOfRow`. */
+  rowEdges: Record<string, RelationEdge[]>;
   [key: string]: unknown;
 }
 
@@ -140,12 +142,23 @@ export function isBackReference(field: ExportedField): boolean {
   return field.relation?.kind === "ManyToOne";
 }
 
-export function nodeData(table: ExportedTable, style: ResolvedStyle): TableNodeData {
+export function nodeData(
+  table: ExportedTable,
+  style: ResolvedStyle,
+  relations: RelationEdge[],
+): TableNodeData {
+  const nodeId = tableId(table.namespace, table.name);
+  const rowEdges: Record<string, RelationEdge[]> = {};
+  for (const field of table.fields) {
+    const edges = edgesOfRow(relations, nodeId, field);
+    if (edges.length > 0) rowEdges[field.name] = edges;
+  }
   return {
     table,
     columns: table.fields.filter((f) => !isBackReference(f)),
     backReferences: table.fields.filter(isBackReference),
     style,
+    rowEdges,
   };
 }
 
@@ -205,6 +218,34 @@ export function relationEdges(model: ExportedModel): RelationEdge[] {
     }
   }
   return edges;
+}
+
+/**
+ * The edges "belonging" to one row - for the eye button and hover
+ * highlighting. A row is exactly one of three kinds: a declaring `>`/`-`
+ * field owns its own outgoing edge; a plain column is "referenced" by
+ * whichever edges resolved to it; a back-reference mirrors the forward edge
+ * declared from the other side, so it is looked up by that side's identity
+ * rather than its own (the same double-filtering `relationEdges` applies to
+ * the `<` side above).
+ */
+export function edgesOfRow(
+  relations: RelationEdge[],
+  nodeId: string,
+  field: ExportedField,
+): RelationEdge[] {
+  const relation = field.relation;
+  if (relation && isBackReference(field)) {
+    const source = tableId(relation.targetNamespace, relation.targetTable);
+    return relations.filter(
+      (edge) =>
+        edge.source === source && edge.sourceField === relation.targetField && edge.target === nodeId,
+    );
+  }
+  if (relation) {
+    return relations.filter((edge) => edge.source === nodeId && edge.label === field.name);
+  }
+  return relations.filter((edge) => edge.target === nodeId && edge.targetField === field.name);
 }
 
 /**

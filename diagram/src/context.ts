@@ -8,8 +8,13 @@
  *
  * The declarations themselves live in `types.ts`, which stays free of
  * React so an extension host can read them too.
+ *
+ * Hover and hidden-edge state live in a second context, `DiagramInteraction`,
+ * kept apart from `host`/`chrome` on purpose: those two are stable for a
+ * whole session, while a hover changes every pointer move, and mixing the
+ * two would re-render every node on every hover.
  */
-import { createContext, useContext } from "react";
+import { createContext, useContext, type Dispatch, type SetStateAction } from "react";
 
 import type { ExportedEnum, ExportedField, ExportedGroup, ExportedTable } from "@skema/model";
 import type { DiagramChrome, DiagramHost } from "./types";
@@ -37,6 +42,38 @@ export function useDiagramHost(): DiagramHost {
 
 export function useDiagramChrome(): DiagramChrome {
   return useDiagramContext().chrome;
+}
+
+/** Which row - by node id and field name - is currently hovered. */
+export interface HoveredRow {
+  nodeId: string;
+  field: string;
+}
+
+interface DiagramInteractionValue {
+  hiddenEdgeIds: ReadonlySet<string>;
+  toggleHidden: (edgeId: string) => void;
+  setHoveredRow: Dispatch<SetStateAction<HoveredRow | null>>;
+  hiddenEdgeCount: number;
+  showAllEdges: () => void;
+}
+
+const DiagramInteractionContext = createContext<DiagramInteractionValue | null>(null);
+
+export const DiagramInteractionProvider = DiagramInteractionContext.Provider;
+
+export function useDiagramInteraction(): DiagramInteractionValue {
+  const value = useContext(DiagramInteractionContext);
+  if (!value) {
+    throw new Error("Diagram components must be rendered inside <DiagramView>");
+  }
+  return value;
+}
+
+/** The hosts' "show all hidden lines" toolbar button. */
+export function useHiddenEdges(): { count: number; showAll: () => void } {
+  const { hiddenEdgeCount, showAllEdges } = useDiagramInteraction();
+  return { count: hiddenEdgeCount, showAll: showAllEdges };
 }
 
 /**

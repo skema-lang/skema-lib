@@ -2,6 +2,7 @@ export { DiagramView } from "./DiagramView";
 export type { DiagramViewProps } from "./DiagramView";
 
 export * from "./types";
+export { useHiddenEdges } from "./context";
 export * from "./layoutFile";
 export * from "./style";
 export * from "./graph";
