@@ -1,6 +1,6 @@
 {
   "name": "@skema/collab-protocol",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The Yjs wire protocol and invite encoding shared by every skema collaboration host.",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "test": "npm run build && node --import ./test/register.mjs --test test/*.test.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit"
   },
