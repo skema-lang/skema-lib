@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "test": "npm run build && node --import ./test/register.mjs --test test/*.test.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit"
   },
