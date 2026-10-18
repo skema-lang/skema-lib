@@ -1,6 +1,6 @@
 {
   "name": "@skema/docs",
-  "version": "0.6.0-rc.1",
+  "version": "0.6.0",
   "description": "The skema model as Markdown reference documentation, shared by the browser editor and the VSCode extension.",
   "license": "MIT OR Apache-2.0",
   "repository": {
